@@ -44,7 +44,7 @@ int get_weather(struct weather *wthr,const char *city){
 						   city, HOST);
 
 	char *buffer = malloc(512);
-	int content_length = send_get_request(buffer, 512, headers, ADDR);
+	int content_length = send_get_request(buffer, 512, headers, IP_ADDR);
 	free(headers);
 	if(content_length <= 0) {
 		free(buffer);
