@@ -1,11 +1,3 @@
-#define POS_TEMP 	23
-#define POS_PRESS 	25
-#define POS_HUM 	27
-#define POS_WSPEED 	39
-#define POS_WDIR 	41
-#define POS_SRISE 	55
-#define POS_SSET 	57
-
 struct weather {
 	// char *description;
 	int temperature;
