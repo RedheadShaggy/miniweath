@@ -1,3 +1,5 @@
+CFLAGS += -Os
+
 all: weather
 
 %.o: %.c jsmn.h

@@ -5,4 +5,7 @@ I develop it for logging weather using my OpenWRT router which has not so much m
 At this time app not done yet, but i writing code time to time :D  
   
 Also I use Jsmn lib for parsing JSON, it's a cool and small c library.   
-Check it out on http://zserge.com/jsmn.html
+Check it out on http://zserge.com/jsmn.html  
+  
+##### Actually
+now it even can show weather, just enter your city as first arg.

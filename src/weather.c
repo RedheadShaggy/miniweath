@@ -1,6 +1,6 @@
 /*
 	TODO Add output format options
-	     Rewrite shitty code in json_to_weather()
+	     Handle weather description token
  */
 
 #include <stdio.h>
@@ -17,6 +17,13 @@
 #include "jsmn.h"
 #include "weather.h"
 
+void print_human(const struct weather *wthr,const int mask){
+	if(mask & 1) printf("%d", wthr->temperature);
+	if(mask & 2) printf(" %s", wthr->description);
+	if(mask & 4) printf(", humidity %d%%", wthr->humidity);
+	printf("\n");
+}
+
 int main(int argc, char const *argv[]){
 	struct weather cur_weather;
 	int result = get_weather(&cur_weather, argv[1]);
@@ -24,7 +31,17 @@ int main(int argc, char const *argv[]){
 		printf("Error %d\n", result);
 		return 0;
 	}
-	printf("Temperature = %d\n", cur_weather.temperature);
+
+	printf("%d %s, humidity %d%%, pressure %d, wind %dm/s to %ddeg, cloudiness %d%%, sun %d/%d.\n",
+		   cur_weather.temperature,
+		   cur_weather.description,
+		   cur_weather.humidity,
+		   cur_weather.pressure,
+		   cur_weather.wind_speed,
+		   cur_weather.wind_direction,
+		   cur_weather.cloudiness,
+		   cur_weather.sunrise,
+		   cur_weather.sunset);
 	return 0;
 }
 
@@ -38,17 +55,13 @@ int main(int argc, char const *argv[]){
  */
 int get_weather(struct weather *wthr,const char *city){
 	char *headers = malloc(128);
-	snprintf(headers, 128, "GET /data/2.5/weather?q={%s}&units=metric HTTP/1.1\r\n"
-						   "Host: %s\r\n"
-						   "Connection: close\r\n\r\n",
-						   city, HOST);
+	snprintf(headers, 128, REQUEST_HEADERS, city, HOST);
 
 	char *buffer = malloc(512);
 	int content_length = send_get_request(buffer, 512, headers, IP_ADDR);
 	free(headers);
 	if(content_length <= 0) {
 		free(buffer);
-		printf("%d\n", content_length);
 		return content_length; // If content_length is negative, that means a error occured, we return error code.
 	}
 
@@ -91,66 +104,56 @@ jsmnerr_t json_to_weather(struct weather *wthr,const char* json){
 	jsmn_init(&json_parser);
 	tokens_num = jsmn_parse(&json_parser, json, strlen(json), tokens, tokens_num);
 
-	/*
-		If first key in JSON is "cod", that means there's no weather information.
-	*/
-	char token_value[16];
-	json_get_token_val(token_value, 16, &tokens[1], json);
-	if(strcmp(token_value, "cod") == 0)
-		return JSMN_ERROR_INVAL;
-
-	/*
-		This sucks.
-		The most shitty code you ever seen.
-		I don't know how to manage this, but i try rewrite this code later.
-		And also i must handle weather description.
-	*/
-	int i = 0;
-	for(i = 0; i < tokens_num; i++){
-		json_get_token_val(token_value, 16, &tokens[i], json);
-		if(strcmp(token_value, "temp") == 0){
-			i++;
-			json_get_token_val(token_value, 16, &tokens[i], json);
-			wthr->temperature  = atoll(token_value);
-		}
-		else if(strcmp(token_value, "pressure") == 0){
-			i++;
-			json_get_token_val(token_value, 16, &tokens[i], json);
-			wthr->pressure  = atoll(token_value);
-		}
-		else if(strcmp(token_value, "humidity") == 0){
-			i++;
-			json_get_token_val(token_value, 16, &tokens[i], json);
-			wthr->humidity  = atoll(token_value);
-		}
-		else if(strcmp(token_value, "speed") == 0){
-			i++;
-			json_get_token_val(token_value, 16, &tokens[i], json);
-			wthr->wind_speed  = atoll(token_value);
-		}
-		else if(strcmp(token_value, "deg") == 0){
-			i++;
-			json_get_token_val(token_value, 16, &tokens[i], json);
-			wthr->wind_direction  = atoll(token_value);
-		}
-		else if(strcmp(token_value, "all") == 0){
-			i++;
-			json_get_token_val(token_value, 16, &tokens[i], json);
-			wthr->cloudness  = atoll(token_value);
-		}
-		else if(strcmp(token_value, "sunrise") == 0){
-			i++;
-			json_get_token_val(token_value, 16, &tokens[i], json);
-			wthr->sunrise  = atoll(token_value);
-		}
-		else if(strcmp(token_value, "sunset") == 0){
-			i++;
-			json_get_token_val(token_value, 16, &tokens[i], json);
-			wthr->sunset  = atoll(token_value);
-		}
+	if(parse_tokens(wthr, tokens, tokens_num, json) != 0){
+		free(tokens);
+		return JSMN_ERROR_PART;
 	}
 
 	free(tokens);
+
+	return 0;
+}
+
+/**
+	Parse jsmn tokens and store needed in weather struct.
+
+	@param	wthr 		Weather structure for storing values.
+	@param 	tokens 		Array with jsmn tokens.
+	@param 	len 		Length of array with jsmn tokens.
+	@param 	json 		Json string, where this tokens placed.
+
+	@return 0 if success or -1 if there's no weather information.
+ */
+int parse_tokens(struct weather *wthr, const jsmntok_t *tokens, const size_t len, const char *json){
+	/* If first key in JSON is "cod", that means there's no weather information. */
+	char token_key[16];
+	json_get_token_val(token_key, 16, &tokens[1], json);
+	if(strcmp(token_key, "cod") == 0)
+		return -1;
+
+	int i;
+	for(i = 0; i < len; i++){
+		/* If token is a string and has 1 child, that means this token is a key */
+		if(tokens[i].type == JSMN_STRING && tokens[i].size == 1){
+			/* And if his child is primitive or string (not an object or something else), then it's probably needed token */
+			if(tokens[i+1].type == JSMN_PRIMITIVE || tokens[i+1].type == JSMN_STRING){
+				/* At this step we have key-value pair (i and i+1) */
+				char token_value[16];
+				json_get_token_val(token_key, 16, &tokens[i], json);
+				json_get_token_val(token_value, 16, &tokens[i+1], json);
+
+				if(strcmp(token_key, "temp") == 0){wthr->temperature  = atoll(token_value);}
+				else if(strcmp(token_key, "pressure") == 0){wthr->pressure  = atoll(token_value);}
+				else if(strcmp(token_key, "humidity") == 0){wthr->humidity  = atoll(token_value);}
+				else if(strcmp(token_key, "speed") == 0){wthr->wind_speed  = atoll(token_value);}
+				else if(strcmp(token_key, "deg") == 0){wthr->wind_direction  = atoll(token_value);}
+				else if(strcmp(token_key, "all") == 0){wthr->cloudiness  = atoll(token_value);}
+				else if(strcmp(token_key, "sunrise") == 0){wthr->sunrise  = atoll(token_value);}
+				else if(strcmp(token_key, "sunset") == 0){wthr->sunset  = atoll(token_value);}
+				else if(strcmp(token_key, "description") == 0){strcpy(wthr->description, token_value);}
+			}
+		}
+	}
 
 	return 0;
 }
