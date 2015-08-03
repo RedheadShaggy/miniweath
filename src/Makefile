@@ -1,4 +1,4 @@
-CFLAGS += -Os
+CFLAGS += -Os -pedantic-errors
 
 all: weather
 

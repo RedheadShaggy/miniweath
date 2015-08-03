@@ -1,0 +1,1 @@
+{"dt":1438610575, "name":"Izhevsk", "description":"few clouds", "cloudiness":24, "wind_speed":4, "wind_direction":278, "pressure":1011, "humidity":59, "sunrise":1438561820, "sunset":1438619689}

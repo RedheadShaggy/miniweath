@@ -1,12 +1,12 @@
 /*
 	TODO Add output format options
-	     Handle weather description token
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 #include <errno.h>
 #include <sys/types.h>
 
@@ -17,45 +17,45 @@
 #include "jsmn.h"
 #include "weather.h"
 
-void print_human(const struct weather *wthr,const int mask){
-	if(mask & 1) printf("%d", wthr->temperature);
-	if(mask & 2) printf(" %s", wthr->description);
-	if(mask & 4) printf(", humidity %d%%", wthr->humidity);
-	printf("\n");
-}
-
 int main(int argc, char const *argv[]){
-	struct weather cur_weather;
-	int result = get_weather(&cur_weather, argv[1]);
-	if(result < 0){
-		printf("Error %d\n", result);
+	if(argc < 2 || argv[1][0] == '-'){
+		print_usage();
 		return 0;
 	}
 
-	printf("%d %s, humidity %d%%, pressure %d, wind %dm/s to %ddeg, cloudiness %d%%, sun %d/%d.\n",
-		   cur_weather.temperature,
-		   cur_weather.description,
-		   cur_weather.humidity,
-		   cur_weather.pressure,
-		   cur_weather.wind_speed,
-		   cur_weather.wind_direction,
-		   cur_weather.cloudiness,
-		   cur_weather.sunrise,
-		   cur_weather.sunset);
+	struct weather cur_weather;
+	if(request_weather(&cur_weather, argv[1]) != 0)
+		return -1;
+
+	if(argc == 3 && argv[2][0] == '-'){
+		switch(argv[2][1]){
+			case 'J':
+				print_json(&cur_weather);
+				break;
+			default:
+				print_usage();
+		}
+	} else {
+		print_human(&cur_weather);
+	}
+
 	return 0;
 }
 
 /**
-	Gets current weather from OpenWeatherMap.org for city.
+	Get current weather from OpenWeatherMap.org for city.
+
+	Sends HTTP GET request to api.openweather.org, parse json response
+	and store needed values in given weather structure.
 
 	@param	wthr 		Weather struct to store data.
 	@param	city 		I think you get it.
 
 	@return 0 if success or negative error code.
  */
-int get_weather(struct weather *wthr,const char *city){
+int request_weather(struct weather *wthr,const char *city){
 	char *headers = malloc(128);
-	snprintf(headers, 128, REQUEST_HEADERS, city, HOST);
+	snprintf(headers, 128, HTTPGET_HEADERS, city, HOST);
 
 	char *buffer = malloc(512);
 	int content_length = send_get_request(buffer, 512, headers, IP_ADDR);
@@ -65,14 +65,16 @@ int get_weather(struct weather *wthr,const char *city){
 		return content_length; // If content_length is negative, that means a error occured, we return error code.
 	}
 
-	char *raw_json_data = malloc(content_length);
-	strcpy(raw_json_data, buffer);
+	char *json = malloc(content_length);
+	strcpy(json, buffer);
 	free(buffer);
 
-	int result = json_to_weather(wthr, raw_json_data);
+	if(json_to_weather(wthr, raw_json_data) != 0){
+		free(raw_json_data);
+		return -1;
+	}
+
 	free(raw_json_data);
-	if(result != 0)
-		return result;
 
 	return 0;
 }
@@ -87,12 +89,10 @@ int get_weather(struct weather *wthr,const char *city){
  */
 jsmnerr_t json_to_weather(struct weather *wthr,const char* json){
 	jsmn_parser json_parser;
-	jsmntok_t *tokens;
-	int tokens_num;
-
+	
 	/* Count tokens and allocate place for them. */
 	jsmn_init(&json_parser);
-	tokens_num =  jsmn_parse(&json_parser, json, strlen(json), NULL, 0);
+	int tokens_num =  jsmn_parse(&json_parser, json, strlen(json), NULL, 0);
 
 	if(tokens_num < 0)
 		return tokens_num;
@@ -100,7 +100,7 @@ jsmnerr_t json_to_weather(struct weather *wthr,const char* json){
 		return JSMN_ERROR_PART;
 
 	/* Re-init json_parser for resetting position and parse the actual tokens. */
-	tokens = malloc(tokens_num * sizeof *tokens);
+	jsmntok_t *tokens = malloc(tokens_num * sizeof *tokens);
 	jsmn_init(&json_parser);
 	tokens_num = jsmn_parse(&json_parser, json, strlen(json), tokens, tokens_num);
 
@@ -151,6 +151,7 @@ int parse_tokens(struct weather *wthr, const jsmntok_t *tokens, const size_t len
 				else if(strcmp(token_key, "sunrise") == 0){wthr->sunrise  = atoll(token_value);}
 				else if(strcmp(token_key, "sunset") == 0){wthr->sunset  = atoll(token_value);}
 				else if(strcmp(token_key, "description") == 0){strcpy(wthr->description, token_value);}
+				else if(strcmp(token_key, "name") == 0){strcpy(wthr->city, token_value);}
 			}
 		}
 	}
@@ -191,8 +192,6 @@ ssize_t json_get_token_val(char *buf,const size_t len, const jsmntok_t *token, c
 	@return length of retrieved content or error code.
  */
 ssize_t send_get_request(char *buf, const size_t len, const char* headers, const char* dst_ip){
-	static const unsigned int BUFF_SIZE = 1024;
-
 	struct sockaddr_in dst;
 	dst.sin_family = AF_INET;
 	dst.sin_port = htons(PORT);
@@ -205,9 +204,9 @@ ssize_t send_get_request(char *buf, const size_t len, const char* headers, const
 	if(send(sock, headers, strlen(headers), 0) == -1)
 		return errno;
 
-	char buffer[BUFF_SIZE];
-	int bytes_received = recv(sock, buffer, BUFF_SIZE-1, 0);
-	buffer[BUFF_SIZE] = '\0'; // Adding terminating char for strchr function
+	char buffer[1024];
+	int bytes_received = recv(sock, buffer, 1024-1, 0);
+	buffer[1024] = '\0'; // Adding terminating char for strchr function
 	close(sock);
 
 	/*
@@ -230,22 +229,49 @@ ssize_t send_get_request(char *buf, const size_t len, const char* headers, const
 	return content_length;
 }
 
+/* -----------------------------------------------------------
+ * Printing functions
+ */
+
 void print_usage() {
-	printf("weather CITY [FORMAT][OPTIONS]\n"
+	printf("weather CITY [FORMAT]\n"
 			"\n"
 			"Output formats:\n"
-			"	-R          - Raw output(without parsing)\n"
-			"	-J[OPTIONS] - JSON\n"
-			"	-H[OPTIONS] - Human readable (default)\n"
-			"\n"
-			"Options:\n"
-			"	d - Description\n"
-			"	t - Temperature(Celsius)\n"
-			"	p - Pressure\n"
-			"	h - Humidity\n"
-			"	w - Wind (speed and direction)\n"
-			"	c - Cloudiness\n"
-			"	S - Sunrise\n"
-			"	s - Sunset\n"
-			"	T - Timestamp\n");
+			"	-J - JSON\n");
+}
+
+void print_human(const struct weather *wthr){
+	time_t raw_time;
+	char time_buf[10];
+
+	printf("%s\n\n", wthr->city);
+	printf("    %d\u00B0C\n\n", wthr->temperature);
+	printf("Wind        %d m/s to %d\u00B0\n", wthr->wind_speed, wthr->wind_direction);
+	printf("Cloudiness  %s (%d%%)\n", wthr->description, wthr->cloudiness);
+	printf("Pressure    %d hpa\n", wthr->pressure);
+	printf("Humidity    %d%%\n", wthr->humidity);
+
+	raw_time = wthr->sunrise;
+	strftime (time_buf, 10, "%R", localtime (&raw_time));
+	printf("Sunrise     %s\n", time_buf);
+
+	raw_time = wthr->sunset;
+	strftime (time_buf, 10, "%R", localtime (&raw_time));
+	printf("Sunset      %s\n", time_buf);
+}
+
+void print_json(const struct weather *wthr){
+	time_t timer;
+
+	time(&timer);
+	printf("{\"dt\":%ld, ", timer);
+	printf("\"name\":\"%s\", ", wthr->city);
+	printf("\"description\":\"%s\", ", wthr->description);
+	printf("\"cloudiness\":%d, ", wthr->cloudiness);
+	printf("\"wind_speed\":%d, ", wthr->wind_speed);
+	printf("\"wind_direction\":%d, ", wthr->wind_direction);
+	printf("\"pressure\":%d, ", wthr->pressure);
+	printf("\"humidity\":%d, ", wthr->humidity);
+	printf("\"sunrise\":%d, ", wthr->sunrise);
+	printf("\"sunset\":%d}\n", wthr->sunset);
 }
