@@ -1,14 +1,22 @@
-CFLAGS += -Os -pedantic-errors
+APPNAME=miniweath
 
-all: weather
+CC=gcc
+CFLAGS=-c -Wall -Os -flto
+LDFLAGS=-s
 
-%.o: %.c jsmn.h
-	$(CC) -Wall -c $(CFLAGS) $< -o $@
+SOURCES:=miniweath.c jsmn/jsmn.c
+OBJECTS:=$(SOURCES:.c=.o)
 
-weather: weather.o
-	$(CC) $(LDFLAGS) -L. $< -o $@ -ljsmn
+all: jsmn $(APPNAME)
 
-weather.o: weather.c libjsmn.a
+jsmn:
+	hg clone https://bitbucket.org/zserge/jsmn jsmn
+
+$(APPNAME): $(OBJECTS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJECTS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
-	rm -f *.o weather
+	rm -rf *.o $(APPNAME) ./jsmn

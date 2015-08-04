@@ -14,8 +14,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#include "jsmn.h"
-#include "weather.h"
+#include "jsmn/jsmn.h"
+#include "miniweath.h"
 
 int main(int argc, char const *argv[]){
 	if(argc < 2 || argv[1][0] == '-'){
@@ -69,12 +69,12 @@ int request_weather(struct weather *wthr,const char *city){
 	strcpy(json, buffer);
 	free(buffer);
 
-	if(json_to_weather(wthr, raw_json_data) != 0){
-		free(raw_json_data);
+	if(json_to_weather(wthr, json) != 0){
+		free(json);
 		return -1;
 	}
 
-	free(raw_json_data);
+	free(json);
 
 	return 0;
 }
@@ -206,7 +206,7 @@ ssize_t send_get_request(char *buf, const size_t len, const char* headers, const
 
 	char buffer[1024];
 	int bytes_received = recv(sock, buffer, 1024-1, 0);
-	buffer[1024] = '\0'; // Adding terminating char for strchr function
+	buffer[1024-1] = '\0'; // Adding terminating char for strchr function
 	close(sock);
 
 	/*
@@ -234,7 +234,7 @@ ssize_t send_get_request(char *buf, const size_t len, const char* headers, const
  */
 
 void print_usage() {
-	printf("weather CITY [FORMAT]\n"
+	printf("miniweath CITY [FORMAT]\n"
 			"\n"
 			"Output formats:\n"
 			"	-J - JSON\n");
@@ -271,6 +271,7 @@ void print_json(const struct weather *wthr){
 	printf("\"wind_speed\":%d, ", wthr->wind_speed);
 	printf("\"wind_direction\":%d, ", wthr->wind_direction);
 	printf("\"pressure\":%d, ", wthr->pressure);
+	printf("\"temp\":%d, ", wthr->temperature);
 	printf("\"humidity\":%d, ", wthr->humidity);
 	printf("\"sunrise\":%d, ", wthr->sunrise);
 	printf("\"sunset\":%d}\n", wthr->sunset);
