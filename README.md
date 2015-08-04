@@ -4,7 +4,7 @@ Simple c app for fetching current weather in city from OpenWeatherMap.org
 I develop it for logging weather using my OpenWRT router which has not so much memory for other packages.  
 
 ### Features
-+ File size is about 10k
++ File size is about 10kb
 + Uses only standart c library
 + Uses sokets
 + Supports Json output format, may be useful for logging with crontab  
