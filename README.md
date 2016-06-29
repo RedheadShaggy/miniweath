@@ -1,4 +1,7 @@
 # miniweath
+
+__Doesn't work at this moment, because OpenWeatherMap has changed his API and i'm too lazy to fix that.__
+
 Simple c app for fetching current weather in city from OpenWeatherMap.org  
   
 I develop it for logging weather using my OpenWRT router which has not so much memory for other packages.  
