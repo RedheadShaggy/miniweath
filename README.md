@@ -8,7 +8,7 @@ I develop it for logging weather using my OpenWRT router which has not so much m
 
 ### Features
 + Uses only standart c library
-+ Supports Json output format, may be useful for logging with crontab  
++ Supports Json output format, may be useful for logging with crontab, as i do  
   
 ---
 ##### Compiling
